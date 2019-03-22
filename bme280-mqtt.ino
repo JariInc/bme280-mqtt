@@ -35,9 +35,9 @@ char client_id[32];
 char state_topic[64];
 
 BME280I2C::Settings settings(
+   BME280::OSR_X8,
    BME280::OSR_X16,
-   BME280::OSR_X16,
-   BME280::OSR_X16,
+   BME280::OSR_X2,
    BME280::Mode_Forced,
    BME280::StandbyTime_1000ms,
    BME280::Filter_16,
