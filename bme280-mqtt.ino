@@ -10,6 +10,8 @@
  
 // Bundled ESP8266WiFi headers
 #include <ESP8266WiFi.h>
+#include <ESP8266mDNS.h>
+#include <WiFiUdp.h>
 
 // PubSubClient https://github.com/knolleary/pubsubclient
 #include <PubSubClient.h>
@@ -20,17 +22,15 @@
 // BME280 by Tyler Glenn https://github.com/finitespace/BME280
 #include <BME280I2C.h>
 
-// Ticker
-#include <Ticker.h>
-
 // Configuration
-#define SDA_PIN D3
-#define SCL_PIN D4
-#define PUBLISH_INTERVAL 60
+#include "config.h"
 
-const char* ssid = "";
-const char* password = "";
-const char* mqtt_server = "";
+const char* ssid = WIFI_SSID;
+const char* password = WIFI_PSK;
+IPAddress IP_ADDR;
+IPAddress GATEWAY;
+IPAddress SUBNET; 
+const char* mqtt_server = MQTT_SERVER_ADDR;
 char client_id[32];
 char state_topic[64];
 
@@ -46,93 +46,66 @@ BME280I2C::Settings settings(
 BME280I2C bme(settings);
 WiFiClient espClient;
 PubSubClient client(espClient);
-Ticker ticker;
 
 void setup_wifi() {
   delay(10);
 
-  Serial.println();
-  Serial.print("Connecting to ");
-  Serial.println(ssid);
-  
+  // Set static IP
+  WiFi.mode(WIFI_STA);
+  WiFi.config(ip, gateway, subnet);  
   WiFi.begin(ssid, password); 
 
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
-    Serial.print(".");
   }
-
-  Serial.println("");
-  Serial.println("WiFi connected");
-  Serial.println("IP address: ");
-  Serial.println(WiFi.localIP());
 }
-
 
 void reconnect() {  
   // Loop until we're reconnected
   while (!client.connected()) {
-    Serial.print("Attempting MQTT connection...");
-    
     // Attempt to connect
-    if (client.connect(client_id)) {
-      Serial.println("connected");
-    } else {
-      Serial.print("failed, rc=");
-      Serial.print(client.state());
-      Serial.println(" try again in 5 seconds");
-      
-      // Wait 5 seconds before retrying
-      delay(5000);
+    if (!client.connect(client_id)) {
+      // Wait 1 second before retrying
+      delay(1000);
     }
   }
 }
 
 void setup_bme() {
+  pinMode(BME_POWER_PIN, OUTPUT);
+  digitalWrite(BME_POWER_PIN, HIGH);
+  
   Wire.begin(SDA_PIN, SCL_PIN);
   
   while(!bme.begin()) {
-    Serial.println("Could not find BME280 sensor!");
     delay(1000);
   }
-  
-  switch(bme.chipModel()) {
-     case BME280::ChipModel_BME280:
-       Serial.println("Found BME280 sensor! Success.");
-       break;
-     case BME280::ChipModel_BMP280:
-       Serial.println("Found BMP280 sensor! No Humidity available.");
-       break;
-     default:
-       Serial.println("Found UNKNOWN sensor! Error!");
-  }
+
+  bme.chipModel();
 }
 
 void setup() {
-  // serial
   Serial.begin(115200);
+  Serial.println();
+  Serial.println("setup");
   
   // bme
   setup_bme();
+  Serial.println("setup bme");
   
   // wifi
   setup_wifi();
-
+  Serial.println("setup wifi");
+  
   // build client id
   sprintf(client_id, "bme280-%X", ESP.getChipId());
-  Serial.print("MQTT client id: ");
-  Serial.println(client_id);
 
   // build state_topic
   sprintf(state_topic, "bme280/%X", ESP.getChipId());
-  Serial.print("MQTT publish topic: ");
-  Serial.println(state_topic);
       
   // mqtt
   client.setServer(mqtt_server, 1883);
-
-  // ticker
-  ticker.attach(PUBLISH_INTERVAL, publish_measurement);
+  Serial.println("setup mqtt");
 }
 
 void loop() {
@@ -140,6 +113,8 @@ void loop() {
     reconnect();
   }
   client.loop();
+    
+   publish_measurement();
 }
 
 void publish_measurement() {
@@ -148,31 +123,22 @@ void publish_measurement() {
   float temp(NAN), hum(NAN), pres(NAN);
   BME280::TempUnit tempUnit(BME280::TempUnit_Celsius);
   BME280::PresUnit presUnit(BME280::PresUnit_Pa);
-  
-  bme.read(pres, temp, hum, tempUnit, presUnit);
 
+  bme.read(pres, temp, hum, tempUnit, presUnit);
+  
   root["temperature"] = temp;
   root["humidity"] = hum;
   root["pressure"] = pres;
   
-  Serial.print("Temperature: ");
-  Serial.print(temp);
-  Serial.print("C ");
-
-  Serial.print("Humidity: ");
-  Serial.print(hum);
-  Serial.print("% RH ");
-  
-  Serial.print("Pressure: ");
-  Serial.print(pres);
-  Serial.println("Pa");
-  
   char output[200];
   root.printTo(output);
 
-  Serial.print("Published: ");
-  Serial.println(output);
+  client.publish(state_topic, output);  
+  delay(100);
 
-  client.publish(state_topic, output);
+  digitalWrite(BME_POWER_PIN, LOW);
+
+  Serial.println("sleep");
+  ESP.deepSleep(PUBLISH_INTERVAL * 1000000);
 }
 
