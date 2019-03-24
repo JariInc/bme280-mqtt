@@ -35,12 +35,12 @@ char client_id[32];
 char state_topic[64];
 
 BME280I2C::Settings settings(
-   BME280::OSR_X8,
-   BME280::OSR_X16,
-   BME280::OSR_X2,
+   BME280::OSR_X1,
+   BME280::OSR_X1,
+   BME280::OSR_X1,
    BME280::Mode_Forced,
-   BME280::StandbyTime_1000ms,
-   BME280::Filter_16,
+   BME280::StandbyTime_500us,
+   BME280::Filter_Off,
    BME280::SpiEnable_False
 );
 BME280I2C bme(settings);
@@ -74,6 +74,7 @@ void reconnect() {
 void setup_bme() {
   pinMode(BME_POWER_PIN, OUTPUT);
   digitalWrite(BME_POWER_PIN, HIGH);
+  delay(10);
   
   Wire.begin(SDA_PIN, SCL_PIN);
   
@@ -81,21 +82,15 @@ void setup_bme() {
     delay(1000);
   }
 
-  bme.chipModel();
+  //bme.chipModel();
 }
 
-void setup() {
-  Serial.begin(115200);
-  Serial.println();
-  Serial.println("setup");
-  
+void setup() {  
   // bme
   setup_bme();
-  Serial.println("setup bme");
   
   // wifi
   setup_wifi();
-  Serial.println("setup wifi");
   
   // build client id
   sprintf(client_id, "bme280-%X", ESP.getChipId());
@@ -105,7 +100,6 @@ void setup() {
       
   // mqtt
   client.setServer(mqtt_server, 1883);
-  Serial.println("setup mqtt");
 }
 
 void loop() {
@@ -114,7 +108,7 @@ void loop() {
   }
   client.loop();
     
-   publish_measurement();
+  publish_measurement();
 }
 
 void publish_measurement() {
@@ -138,7 +132,6 @@ void publish_measurement() {
 
   digitalWrite(BME_POWER_PIN, LOW);
 
-  Serial.println("sleep");
   ESP.deepSleep(PUBLISH_INTERVAL * 1000000);
 }
 
